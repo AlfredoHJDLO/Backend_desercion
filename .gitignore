@@ -1,0 +1,20 @@
+# Entorno Virtual
+venv/
+.venv/
+env/
+
+# Python basura
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Datos y Pesados (No se suben a Git porque son grandes)
+data/*.csv
+data/*.h5
+
+# Variables de entorno (Configuraciones secretas)
+.env
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
