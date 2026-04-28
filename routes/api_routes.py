@@ -29,18 +29,16 @@ def get_dashboard_estudiantes():
 @api_bp.route('/predict', methods=['POST'])
 def predict_risk():
     """
-    Endpoint para predecir el riesgo de un estudiante usando el modelo .h5
-    Espera un JSON con la estructura: {"features": [v1, v2, v3, v4, v5, v6, v7]}
+    Predice el riesgo de deserción de un estudiante por su matrícula.
     """
     params = request.json
+    matricula = params.get('matricula')
     
-    # Extraemos la lista de características del JSON enviado por React
-    features = params.get('features')
-    
-    if not features or not isinstance(features, list):
-        return jsonify({"error": "Debes enviar una lista de 'features' en el cuerpo de la petición."}), 400
+    # Validación simple
+    if not matricula:
+        return jsonify({"error": "Falta el parámetro 'matricula'."}), 400
 
-    # Llamamos al servicio
-    data, status_code = predict_student_risk(features)
+    # Llamada al servicio
+    data, status_code = predict_student_risk(matricula)
     
     return jsonify(data), status_code
