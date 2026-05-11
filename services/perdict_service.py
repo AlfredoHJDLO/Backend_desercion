@@ -1,112 +1,108 @@
 import os
-import numpy as np
-from tensorflow.keras.models import load_model
-from services.data_loader import get_dataframe
+import joblib
+import pandas as pd
+from models import db, ArchivoSubido, Prediccion
+from flask import current_app
 
-# Construimos la ruta absoluta al modelo
+# Caminho para o modelo Random Forest (.joblib)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_PATH = os.path.join(BASE_DIR, 'data', 'cnn_pso_model.h5')
+MODEL_PATH = os.path.join(BASE_DIR, 'data', 'rank_01_trial_03_mcc_0.7517.joblib')
 
-# Cargamos el modelo al iniciar
 try:
-    print("Cargando modelo de predicción...")
-    model = load_model(MODEL_PATH)
-    print("¡Modelo cargado exitosamente!")
+    print("A carregar modelo Random Forest...")
+    modelo_rf = joblib.load(MODEL_PATH)
+    print("Modelo carregado com sucesso!")
 except Exception as e:
-    print(f"Error al cargar el modelo: {e}")
-    model = None
+    print(f"Erro ao carregar o modelo: {e}")
+    modelo_rf = None
 
-def predict_student_risk(matricula):
+# Ordem EXATA das 48 variáveis
+ORDEN_COLUMNAS = [
+    "Previous qualification (grade)", "Admission grade", "Displaced", "Debtor",
+    "Tuition fees up to date", "Gender", "Scholarship holder", "Age at enrollment",
+    "Curricular units 1st sem (credited)", "Curricular units 1st sem (enrolled)",
+    "Curricular units 1st sem (evaluations)", "Curricular units 1st sem (approved)",
+    "Curricular units 1st sem (grade)", "Curricular units 1st sem (without evaluations)",
+    "Curricular units 2nd sem (credited)", "Curricular units 2nd sem (enrolled)",
+    "Curricular units 2nd sem (evaluations)", "Curricular units 2nd sem (approved)",
+    "Curricular units 2nd sem (grade)", "Curricular units 2nd sem (without evaluations)",
+    "Unemployment rate", "Inflation rate", "GDP", "Approval_rate_1st_sem",
+    "Approval_rate_2nd_sem", "Application mode_17", "Application mode_39",
+    "Application order_1", "Application order_2", "Course_9119", "Course_9238",
+    "Course_9500", "Course_9853", "Mother's qualification_3", "Mother's qualification_19",
+    "Mother's qualification_37", "Father's qualification_19", "Father's qualification_37",
+    "Father's qualification_38", "Mother's occupation_3", "Mother's occupation_4",
+    "Mother's occupation_5", "Mother's occupation_9", "Father's occupation_3",
+    "Father's occupation_4", "Father's occupation_5", "Father's occupation_7",
+    "Father's occupation_9"
+]
+
+def procesar_archivo_excel(archivo_id):
     """
-    Busca al estudiante por matrícula, calcula las variables para el modelo,
-    y retorna la información del alumno junto con su predicción de riesgo.
+    Lê o ficheiro subido, realiza a predição em lote e guarda os dados
+    detalhados (idade, deslocado, etc.) para as estatísticas e tabela.
     """
-    if model is None:
-        return {"error": "El modelo predictivo no está disponible."}, 500
+    if modelo_rf is None:
+        return {"error": "O modelo não está disponível."}, 500
 
-    df = get_dataframe()
+    archivo_db = ArchivoSubido.query.get(archivo_id)
+    if not archivo_db:
+        return {"error": "Ficheiro não encontrado."}, 404
+
+    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], archivo_db.nombre_archivo)
     
-    # 1. Buscamos al estudiante
-    estudiante = df[df['MATRÍCULA'].astype(str) == str(matricula)]
-    
-    if estudiante.empty:
-        return {"error": f"No se encontró ningún estudiante con la matrícula {matricula}."}, 404
-
-    row = estudiante.iloc[0]
-
     try:
-        # --- EXTRACCIÓN DE DATOS PARA LA RESPUESTA ---
-        grupo = str(row['GRUPO'])
-        carrera = str(row['CARRERA'])
-        estado = str(row['ESTADO'])
-        periodo_actual = int(row['PERIODO ACTUAL'])
-        prom_ciclo_ant = float(row['PROMEDIO CICLO ANTERIOR'])
-        prom_general = float(row['PROMEDIO GENERAL'])
-        edad = int(row['EDAD'])
+        # 1. Leitura do ficheiro
+        df = pd.read_csv(filepath) if filepath.endswith('.csv') else pd.read_excel(filepath)
         
-        # --- CÁLCULO DE VARIABLES PARA EL MODELO ---
-        
-        # V1: Género
-        f1_genero = float(row['GENERO_ENC'])
-        
-        # V2: Locales o foráneos (Región 69 = 0, Distinto = 1)
-        region = float(row['REGION'])
-        es_foraneo = 0.0 if region == 69.0 else 1.0
-        
-        # V3: Edad normalizada
-        f3_edad_norm = (edad - 16.0) / (30.0 - 16.0)
-        
-        # V4: 1ER_SEM_NORM
-        f4_1er_sem_norm = prom_ciclo_ant / 10.0
-        
-        # V5: 2ER_SEM_NORM
-        f5_2er_sem_norm = (prom_ciclo_ant + prom_general) / 20.0
-        
-        # V6: Tendencia normalizada (Nueva fórmula min-max)
-        tendencia = f5_2er_sem_norm - f4_1er_sem_norm
-        min_tendencia = -3.296296296
-        max_tendencia = 0.46666666666666
-        f6_tendencia_norm = (tendencia - min_tendencia) / (max_tendencia - min_tendencia)
-        
-        # V7: Prom_gen_normalizado
-        f7_prom_gen_norm = prom_general / 10.0
-        
-        # Formamos la lista de características para la CNN
-        features_list = [
-            f1_genero,
-            es_foraneo,
-            f3_edad_norm,
-            f4_1er_sem_norm,
-            f5_2er_sem_norm,
-            f6_tendencia_norm,
-            f7_prom_gen_norm
-        ]
-        
-        # --- PREDICCIÓN ---
-        input_data = np.array(features_list, dtype=np.float32).reshape(1, 7, 1)
-        prediccion = model.predict(input_data)
-        probabilidad = float(prediccion[0][0])
-        es_riesgo = 1 if probabilidad >= 0.5 else 0
+        # 2. Validação de colunas
+        columnas_faltantes = [col for col in ORDEN_COLUMNAS if col not in df.columns]
+        if columnas_faltantes:
+            return {"error": f"Faltam colunas: {columnas_faltantes[:3]}..."}, 400
 
-        # --- CONSTRUCCIÓN DE LA RESPUESTA JSON ---
+        # 3. Preparação dos dados para o modelo
+        X_input = df[ORDEN_COLUMNAS]
+
+        # 4. Inferência (Predição)
+        probabilidades = modelo_rf.predict_proba(X_input)[:, 1] 
+        clases_predichas = modelo_rf.predict(X_input)
+
+        # 5. Limpeza de dados antigos deste ficheiro
+        Prediccion.query.filter_by(archivo_id=archivo_id).delete()
+
+        # 6. Mapeamento e Guardado dos resultados
+        nuevas_predicciones = []
+        for index, row in df.iterrows():
+            # Identificação do aluno
+            matricula_val = str(row.get('Matricula', row.get('ID', f'ID_{index+1}')))
+            
+            # Extração de dados para as estatísticas
+            nueva_prediccion = Prediccion(
+                archivo_id=archivo_id,
+                matricula=matricula_val,
+                # No modelo de 48 variáveis, 'Displaced' indica se é de fora
+                es_foraneo=bool(row['Displaced']), 
+                # 'Age at enrollment' é a idade do aluno
+                edad=int(row['Age at enrollment']),
+                probabilidad_riesgo=float(probabilidades[index]),
+                prediccion_clase=int(clases_predichas[index]),
+                # Para a carreira, como as colunas são codificadas, guardamos o ID se disponível
+                carrera="Ver colunas Course_XXXX" 
+            )
+            nuevas_predicciones.append(nueva_prediccion)
+
+        # Inserção em massa (Bulk Insert)
+        db.session.bulk_save_objects(nuevas_predicciones)
+        
+        # Atualizar estado do ficheiro
+        archivo_db.procesado = True
+        db.session.commit()
+
         return {
-            "success": True,
-            "estudiante": {
-                "matricula": matricula,
-                "grupo": grupo,
-                "carrera": carrera,
-                "estado": estado,
-                "periodo_actual": periodo_actual,
-                "promedio_ciclo_anterior": prom_ciclo_ant,
-                "promedio_general": prom_general,
-                "edad": edad,
-                "es_foraneo": bool(es_foraneo) # Convertimos el 1.0/0.0 a True/False para mejor lectura en React
-            },
-            "prediccion": {
-                "probabilidad_riesgo": round(probabilidad, 4),
-                "prediccion_clase": es_riesgo
-            }
+            "success": True, 
+            "message": f"Foram processados {len(df)} alunos com sucesso."
         }, 200
 
     except Exception as e:
-        return {"error": f"Error interno al calcular variables: {str(e)}"}, 500
+        db.session.rollback()
+        return {"error": f"Erro no processamento: {str(e)}"}, 500

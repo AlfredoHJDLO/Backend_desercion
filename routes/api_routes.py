@@ -1,4 +1,6 @@
 from flask import Blueprint, jsonify, request
+from services.results_service import get_paginated_risk_results
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from services.dashboard_service import get_metadata_service, get_dashboard_data_service
 from services.perdict_service import predict_student_risk
 
@@ -40,5 +42,22 @@ def predict_risk():
 
     # Llamada al servicio
     data, status_code = predict_student_risk(matricula)
+    
+    return jsonify(data), status_code
+
+@api_bp.route('/predicciones', methods=['GET'])
+@jwt_required()
+def get_predictions():
+    """
+    Endpoint paginado para obtener alumnos en riesgo.
+    Uso: /api/predicciones?page=1&per_page=10
+    """
+    current_user_id = get_jwt_identity()
+    
+    # Obtenemos los parámetros de la URL (query params)
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    
+    data, status_code = get_paginated_risk_results(current_user_id, page, per_page)
     
     return jsonify(data), status_code
