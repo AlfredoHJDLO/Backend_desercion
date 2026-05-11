@@ -57,10 +57,12 @@ def get_upload_stats(user_id):
     # Traemos todas las predicciones de este archivo
     query = Prediccion.query.filter_by(archivo_id=archivo.id).all()
     
+    # AQUÍ ESTÁ LA MAGIA ✨
+    # Cambiamos el booleano por el texto que quieres que aparezca en la gráfica
     data = [{
         "edad": p.edad,
         "riesgo": p.prediccion_clase,
-        "foraneo": p.es_foraneo
+        "foraneo": "Foráneos" if p.es_foraneo else "Locales" 
     } for p in query]
     
     df = pd.DataFrame(data)
@@ -75,6 +77,7 @@ def get_upload_stats(user_id):
     fig_edades = px.pie(df_riesgo, names='edad', title='Distribución de Edades en Riesgo')
     
     # Gráfica de Pastel: Locales vs Foráneos en Riesgo
+    # Ahora la columna 'foraneo' ya tiene los textos 'Foráneos' y 'Locales'
     fig_foraneo = px.pie(df_riesgo, names='foraneo', title='Estudiantes Foráneos en Riesgo',
                          color_discrete_sequence=['#7E2C2C', '#EA9C9C'])
 
