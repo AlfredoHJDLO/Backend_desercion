@@ -2,6 +2,7 @@
 venv/
 .venv/
 env/
+desercion.db
 
 # Python basura
 __pycache__/
