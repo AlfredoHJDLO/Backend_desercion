@@ -7,6 +7,8 @@ from datetime import datetime
 from flask import render_template_string, current_app
 from weasyprint import HTML
 from models import ArchivoSubido, Prediccion
+from services.dashboard_service import get_dashboard_data_service # Importamos la lógica existente
+
 
 def generate_full_pdf_report(user_id):
     # 1. Obtener datos del usuario y el archivo procesado
@@ -127,3 +129,136 @@ def _plot_to_base64(fig):
     """Auxiliar para convertir gráfica de Plotly a imagen Base64"""
     img_bytes = fig.to_image(format="png", engine="kaleido")
     return base64.b64encode(img_bytes).decode('utf-8')
+
+
+def generate_statistical_pdf_report(params):
+    from datetime import datetime
+    import json
+    
+    carrera_val = params.get('carreras', "")
+    grupo_val = params.get('grupos', "")
+    
+    # Determinamos si es vista detallada para el servicio
+    # Si hay carrera seleccionada, pedimos estadísticas detalladas (is_estudiantes=True)
+    es_detallado = (carrera_val != "")
+    data = get_dashboard_data_service(params, is_estudiantes=es_detallado)
+    
+    kpis = data['kpis']
+    charts_json = data['charts']
+    
+    import plotly.io as pio
+    def json_to_base64(chart_json):
+        fig = pio.from_json(json.dumps(chart_json))
+        # Asegúrate de que esta función devuelva un string utf-8
+        return _plot_to_base64(fig)
+
+    img_riesgo = json_to_base64(charts_json['pastel_riesgo'])
+    img_lineas = json_to_base64(charts_json['lineas'])
+    img_desempeño = json_to_base64(charts_json['barras'])
+
+    html_template = """
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body { font-family: 'Helvetica'; color: #333; line-height: 1.5; }
+            .header { text-align: center; color: #7E2C2C; border-bottom: 2px solid #7E2C2C; padding-bottom: 10px; }
+            .kpi-container { display: flex; justify-content: space-around; margin: 30px 0; }
+            .kpi-card { border: 1px solid #ddd; padding: 15px; text-align: center; border-radius: 8px; width: 30%; background: #f9f9f9; }
+            .kpi-value { font-size: 22px; font-weight: bold; color: #7E2C2C; display: block; margin-top: 5px; }
+            .section-title { color: #7E2C2C; border-left: 5px solid #7E2C2C; padding-left: 10px; margin-top: 40px; }
+            .explanation { font-size: 14px; color: #555; margin-bottom: 20px; text-align: justify; }
+            .chart { width: 100%; text-align: center; margin-top: 20px; }
+            .footer { font-size: 10px; text-align: center; color: #999; margin-top: 50px; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>Reporte de Desempeño Académico</h1>
+            <p>Universidad Tecnológica de la Mixteca</p>
+            <p style="color: #666;">Generado el {{ fecha }}</p>
+        </div>
+
+        <h2 class="section-title">Resumen Ejecutivo</h2>
+        <p class="explanation">
+            Este apartado presenta los indicadores clave de rendimiento (KPIs) basados en los filtros aplicados. 
+            Permite visualizar rápidamente el volumen de estudiantes y el nivel de riesgo identificado en el periodo actual.
+        </p>
+
+        <div class="kpi-container">
+            <div class="kpi-card">
+                <span>Total Alumnos</span>
+                <span class="kpi-value">{{ kpis.total }}</span>
+            </div>
+            <div class="kpi-card">
+                <span>En Riesgo Crítico</span>
+                <span class="kpi-value">{{ kpis.riesgo }}</span>
+            </div>
+
+            <div class="kpi-card">
+                {% if not carrera %}
+                    <span>Carrera con más Riesgo</span>
+                    <span class="kpi-value" style="font-size: 16px;">{{ kpis.carrera_riesgo }}</span>
+                {% elif carrera and not grupo %}
+                    <span>Grupo con más Riesgo</span>
+                    <span class="kpi-value">{{ kpis.grupo_riesgo }}</span>
+                {% else %}
+                    <span>Promedio General</span>
+                    <span class="kpi-value">{{ kpis.promedio }}</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <h2 class="section-title">Análisis de Distribución de Riesgo</h2>
+        <p class="explanation">
+            La siguiente gráfica ilustra cómo se distribuye el riesgo académico entre las distintas categorías. 
+            Es fundamental para priorizar intervenciones en las áreas con mayor concentración de alumnos vulnerables.
+        </p>
+        <div class="chart">
+            <img src="data:image/png;base64,{{ img_riesgo }}" width="450">
+        </div>
+
+        <div style="page-break-before: always;"></div>
+
+        <h2 class="section-title">Evolución Temporal del Riesgo</h2>
+        <p class="explanation">
+            Muestra la tendencia histórica de estudiantes en riesgo a través de los últimos periodos. 
+            Un aumento en la línea indica la necesidad de revisar las estrategias de retención académica.
+        </p>
+        <div class="chart">
+            <img src="data:image/png;base64,{{ img_lineas }}" width="550">
+        </div>
+
+        <h2 class="section-title">Comparativa de Desempeño</h2>
+        <p class="explanation">
+            Distribución de promedios generales. Este análisis permite identificar si el rendimiento 
+            está concentrado en niveles aprobatorios o si existe una dispersión hacia promedios bajos.
+        </p>
+        <div class="chart">
+            <img src="data:image/png;base64,{{ img_desempeño }}" width="550">
+        </div>
+
+        <div class="footer">
+            Sistema Vita 360 - Reporte Confidencial para Uso Académico
+        </div>
+    </body>
+    </html>
+    """
+
+    from flask import render_template_string
+    from weasyprint import HTML
+    
+    rendered_html = render_template_string(
+        html_template,
+        fecha=datetime.now().strftime("%d/%m/%Y %H:%M"),
+        kpis=kpis,
+        carrera=carrera_val,
+        grupo=grupo_val,
+        img_riesgo=img_riesgo,
+        img_desempeño=img_desempeño,
+        img_lineas=img_lineas
+    )
+
+    # El parámetro encoding="utf-8" asegura que los acentos se procesen bien
+    pdf = HTML(string=rendered_html, base_url=".").write_pdf()
+    return pdf

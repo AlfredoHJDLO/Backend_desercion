@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from flask import send_file, make_response
-from services.report_service import generate_full_pdf_report
+from services.report_service import generate_full_pdf_report, generate_statistical_pdf_report # <--- Importamos la función para el nuevo endpoint
 from services.results_service import get_paginated_risk_results, get_upload_stats # <--- Agrega la importación
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from services.dashboard_service import get_metadata_service, get_dashboard_data_service
@@ -77,4 +77,25 @@ def download_report():
         mimetype='application/pdf',
         as_attachment=True,
         download_name=f"Reporte_Desercion_{datetime.now().strftime('%Y%m%d')}.pdf"
+    )
+
+@api_bp.route('/reporte/dashboard', methods=['POST']) # Cambiado a POST
+@jwt_required()
+def download_dashboard_report():
+    # Obtenemos los filtros desde el cuerpo del JSON
+    datos = request.get_json()
+    
+    filtros = {
+        'carreras': datos.get('carreras', ""),
+        'grupos': datos.get('grupos', "")
+    }
+    
+    # Generamos el PDF
+    pdf_content = generate_statistical_pdf_report(filtros)
+
+    return send_file(
+        io.BytesIO(pdf_content),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f"Reporte_Estadistico_{datetime.now().strftime('%Y%m%d')}.pdf"
     )
