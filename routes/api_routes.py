@@ -1,7 +1,11 @@
 from flask import Blueprint, jsonify, request
+from flask import send_file, make_response
+from services.report_service import generate_full_pdf_report
 from services.results_service import get_paginated_risk_results
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from services.dashboard_service import get_metadata_service, get_dashboard_data_service
+from datetime import datetime
+import io
 
 # Creamos el Blueprint
 api_bp = Blueprint('api', __name__)
@@ -44,3 +48,20 @@ def get_predictions():
     data, status_code = get_paginated_risk_results(current_user_id, page, per_page)
     
     return jsonify(data), status_code
+
+@api_bp.route('/reporte/pdf', methods=['GET'])
+@jwt_required()
+def download_report():
+    current_user_id = get_jwt_identity()
+    pdf_content, error = generate_full_pdf_report(current_user_id)
+    
+    if error:
+        return jsonify({"error": error}), 400
+
+    # Retornar el PDF como un archivo descargable
+    return send_file(
+        io.BytesIO(pdf_content),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f"Reporte_Desercion_{datetime.now().strftime('%Y%m%d')}.pdf"
+    )

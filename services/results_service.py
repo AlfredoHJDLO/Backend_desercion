@@ -1,4 +1,7 @@
 # services/results_service.py
+import pandas as pd
+import plotly.express as px
+import json
 from models import ArchivoSubido, Prediccion
 
 def get_paginated_risk_results(user_id, page=1, per_page=10):
@@ -16,7 +19,6 @@ def get_paginated_risk_results(user_id, page=1, per_page=10):
         return {"error": "El archivo aún se está procesando. Intenta de nuevo en unos segundos."}, 202
 
     # 2. Consultamos las predicciones filtrando solo las de RIESGO (clase 1)
-    # Usamos el método .paginate de Flask-SQLAlchemy
     query = Prediccion.query.filter_by(archivo_id=archivo.id, prediccion_clase=1)
     
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
@@ -45,14 +47,16 @@ def get_paginated_risk_results(user_id, page=1, per_page=10):
     }, 200
 
 def get_upload_stats(user_id):
+    """
+    Genera las gráficas de Plotly basadas en los resultados del archivo subido.
+    """
     archivo = ArchivoSubido.query.filter_by(usuario_id=user_id).first()
     if not archivo or not archivo.procesado:
         return {"error": "No hay datos procesados disponibles."}, 404
 
-    # Traemos todas las predicciones de este archivo a un DataFrame de Pandas
+    # Traemos todas las predicciones de este archivo
     query = Prediccion.query.filter_by(archivo_id=archivo.id).all()
     
-    # Convertimos la lista de objetos a una lista de diccionarios
     data = [{
         "edad": p.edad,
         "riesgo": p.prediccion_clase,
@@ -64,11 +68,13 @@ def get_upload_stats(user_id):
     # Solo estadísticas de los que están en RIESGO
     df_riesgo = df[df['riesgo'] == 1]
 
+    if df_riesgo.empty:
+        return {"charts": {}, "message": "No hay alumnos en riesgo para graficar."}, 200
+
     # Gráfica de Pastel: Edades en Riesgo
     fig_edades = px.pie(df_riesgo, names='edad', title='Distribución de Edades en Riesgo')
     
     # Gráfica de Pastel: Locales vs Foráneos en Riesgo
-    # (Asumiendo que guardaste es_foraneo como booleano/int)
     fig_foraneo = px.pie(df_riesgo, names='foraneo', title='Estudiantes Foráneos en Riesgo',
                          color_discrete_sequence=['#7E2C2C', '#EA9C9C'])
 
