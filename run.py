@@ -33,6 +33,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # Límite de 16 MB para evit
 # Registramos los blueprints (rutas)
 app.register_blueprint(api_bp, url_prefix='/api')
 app.register_blueprint(auth_bp, url_prefix='/auth')
+app.register_blueprint(upload_bp, url_prefix='/api')
 
 # Crear las tablas automáticamente antes de la primera petición si no existen
 with app.app_context():

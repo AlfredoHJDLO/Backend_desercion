@@ -7,7 +7,7 @@ from services.perdict_service import procesar_archivo_excel
 
 upload_bp = Blueprint('upload', __name__)
 
-ALLOWED_EXTENSIONS = {'xlsx'}
+ALLOWED_EXTENSIONS = {'xlsx', 'csv'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -18,7 +18,8 @@ def upload_file():
     """Recibe un archivo Excel y lo asocia al usuario logueado."""
     # 1. Identificamos al usuario gracias al token
     current_user_id = get_jwt_identity()
-
+    print("Formulario recibido (Texto):", request.form)
+    print("Archivos recibidos (Files):", request.files)
     # 2. Verificamos que la petición contenga un archivo
     if 'file' not in request.files:
         return jsonify({"error": "No se encontró el archivo en la petición"}), 400
