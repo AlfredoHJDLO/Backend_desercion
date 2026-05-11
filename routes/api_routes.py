@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 from flask import send_file, make_response
 from services.report_service import generate_full_pdf_report
-from services.results_service import get_paginated_risk_results
+from services.results_service import get_paginated_risk_results, get_upload_stats # <--- Agrega la importación
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from services.dashboard_service import get_metadata_service, get_dashboard_data_service
 from datetime import datetime
@@ -46,6 +46,19 @@ def get_predictions():
     per_page = request.args.get('per_page', 10, type=int)
     
     data, status_code = get_paginated_risk_results(current_user_id, page, per_page)
+    
+    return jsonify(data), status_code
+
+@api_bp.route('/estadisticas_archivo', methods=['GET'])
+@jwt_required()
+def get_file_stats():
+    """
+    Endpoint para obtener los JSON de las gráficas de Plotly
+    del último archivo procesado por el usuario.
+    """
+    current_user_id = get_jwt_identity()
+    
+    data, status_code = get_upload_stats(current_user_id)
     
     return jsonify(data), status_code
 
