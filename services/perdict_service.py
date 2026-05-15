@@ -184,29 +184,38 @@ def procesar_archivo_excel(archivo_id):
         X_final = X_scaled[ORDEN_COLUMNAS_FINAL]
         
         # --- PREDICCIÓN FINAL ---
-        probabilidades = modelo_rf.predict_proba(X_final)[:, 1]
+        # Usamos [:, 0] porque el índice 0 es la clase '0' (Dropout/Deserción)
+        probabilidades = modelo_rf.predict_proba(X_final)[:, 0]
         clases = modelo_rf.predict(X_final)
 
-        # --- PERSISTENCIA EN SQLITE (DATOS LEGIBLES DE df_raw) ---
+        # --- PERSISTENCIA EN SQLITE (ORDENADA POR RIESGO) ---
         Prediccion.query.filter_by(archivo_id=archivo_id).delete()
-        nuevas_preds = []
+        
+        # 1. Creamos una lista temporal con los datos para poder ordenarlos
+        lista_resultados = []
         for index, row in df_raw.iterrows():
-            nuevas_preds.append(Prediccion(
-                archivo_id=archivo_id,
-                matricula=str(row.get('Matricula', row.get('ID', f'ID_{index+1}'))),
-                carrera=str(row.get('Course', 'N/A')), 
-                edad=int(row.get('Age at enrollment', 0)),
-                es_foraneo=bool(row.get('Displaced', False)),
-                probabilidad_riesgo=float(probabilidades[index]),
-                prediccion_clase=int(clases[index])
-            ))
+            lista_resultados.append({
+                "archivo_id": archivo_id,
+                "matricula": str(row.get('Matricula', row.get('ID', f'ID_{index+1}'))),
+                "carrera": str(row.get('Course', 'N/A')), 
+                "edad": int(row.get('Age at enrollment', 0)),
+                "es_foraneo": bool(row.get('Displaced', False)),
+                "probabilidad_riesgo": float(probabilidades[index]),
+                "prediccion_clase": int(clases[index])
+            })
+
+        # 2. Ordenamos: Mayor probabilidad de deserción primero
+        # La lógica es: si P(dropout) = 0.95, va hasta arriba.
+        lista_ordenada = sorted(lista_resultados, key=lambda x: x['probabilidad_riesgo'], reverse=True)
+
+        # 3. Convertimos a objetos de SQLAlchemy y guardamos
+        nuevas_preds = [Prediccion(**datos) for datos in lista_ordenada]
         
         db.session.bulk_save_objects(nuevas_preds)
         archivo_db.procesado = True
         db.session.commit()
 
-        return {"success": True, "message": f"Pipeline finalizado. Se procesaron {len(df_raw)} alumnos exitosamente."}, 200
-
+        return {"success": True, "message": f"Pipeline finalizado. {len(df_raw)} alumnos procesados y ordenados por riesgo."}, 200
     except Exception as e:
         db.session.rollback()
         return {"error": f"Error en el pipeline de datos: {str(e)}"}, 500
