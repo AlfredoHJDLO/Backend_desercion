@@ -1,4 +1,5 @@
 # routes/auth_routes.py
+from datetime import timedelta
 from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import create_access_token
@@ -42,7 +43,8 @@ def login():
         return jsonify({"error": "Credenciales inválidas"}), 401
 
     # Creamos el token (válido, por ejemplo, por 24 horas)
-    access_token = create_access_token(identity=str(usuario.id))
+    tiempo_expiracion = timedelta(hours=24)
+    access_token = create_access_token(identity=str(usuario.id), expires_delta=tiempo_expiracion)
     
     return jsonify({
         "success": True, 
